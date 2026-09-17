@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" id="vp" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Daily · faixa do iOS</title>
+
+  <!-- O mesmo par que o app publica hoje. O status bar style é congelado pelo
+       iOS no momento em que a página vai pra tela de início, então é a única
+       coisa aqui que não dá pra trocar por botão. -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Faixa">
+  <meta name="theme-color" content="#fafafa">
+
+  <style>
+    :root { color-scheme: light; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fafafa;
+      color: #09090b;
+      font: 15px/1.4 -apple-system, system-ui, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body.fixed { height: 100vh; overflow: hidden; overscroll-behavior: none; }
+    body.scrolls { min-height: 300vh; }
+
+    /* A régua: uma linha a cada 10px a partir do topo real da página, com o
+       número em cada 20. Onde a faixa termina, some o borrado — e o número
+       diz em quantos pixels CSS. */
+    #ruler {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 200px;
+      pointer-events: none;
+    }
+    #ruler div {
+      position: absolute;
+      left: 0; right: 0;
+      height: 1px;
+      background: #d4d4d8;
+    }
+    #ruler div.ten { background: #18181b; }
+    #ruler div span {
+      position: absolute;
+      right: 6px;
+      top: -8px;
+      font: 11px/1 ui-monospace, monospace;
+      color: #18181b;
+      background: #fafafa;
+      padding: 1px 3px;
+    }
+
+    /* As três formas de ocupar a borda de cima, uma de cada vez. */
+    #head {
+      position: sticky;
+      top: 0;
+      z-index: 3;
+      background: #fafafa;
+      padding: 10px 14px;
+      font-weight: 600;
+      display: none;
+    }
+    body.head-on #head { display: block; }
+
+    #cap {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: env(safe-area-inset-top, 0px);
+      background: #fafafa;
+      z-index: 4;
+      pointer-events: none;
+      display: none;
+    }
+    body.cap-on #cap { display: block; }
+
+    #paint {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100%;
+      height: 120px;
+      z-index: 2;
+      display: none;
+    }
+    body.canvas-on #paint { display: block; }
+
+    main { position: relative; z-index: 5; padding: 210px 14px 60px; }
+    h1 { font-size: 17px; margin: 0 0 4px; }
+    p.hint { margin: 0 0 16px; color: #52525b; font-size: 13px; }
+    pre {
+      background: #f4f4f5;
+      border: 1px solid #e4e4e7;
+      border-radius: 8px;
+      padding: 10px;
+      font: 12px/1.5 ui-monospace, monospace;
+      white-space: pre-wrap;
+      margin: 0 0 16px;
+    }
+    button {
+      display: block;
+      width: 100%;
+      margin: 0 0 8px;
+      padding: 14px;
+      font: inherit;
+      font-weight: 500;
+      text-align: left;
+      color: #09090b;
+      background: #fff;
+      border: 1px solid #d4d4d8;
+      border-radius: 10px;
+    }
+    button b { font-weight: 600; }
+  </style>
+</head>
+<body class="fixed">
+  <div id="cap"></div>
+  <canvas id="paint"></canvas>
+  <div id="ruler"></div>
+  <div id="head">Cabeçalho DOM opaco</div>
+
+  <main>
+    <h1>A faixa do iOS 27</h1>
+    <p class="hint">
+      Tire um print a cada estado. O que importa é até que número da régua o
+      borrado chega, e se ele some em algum dos estados.
+    </p>
+    <pre id="out">…</pre>
+    <button id="b-vp"></button>
+    <button id="b-head"></button>
+    <button id="b-cap"></button>
+    <button id="b-canvas"></button>
+    <button id="b-scroll"></button>
+  </main>
+
+  <script>
+    var body = document.body;
+
+    // A régua, desenhada uma vez.
+    var ruler = document.getElementById('ruler');
+    for (var y = 0; y <= 200; y += 10) {
+      var line = document.createElement('div');
+      line.style.top = y + 'px';
+      if (y % 20 === 0) {
+        line.className = 'ten';
+        var tag = document.createElement('span');
+        tag.textContent = y;
+        line.appendChild(tag);
+      }
+      ruler.appendChild(line);
+    }
+
+    // Um canvas pintado de uma cor sólida: é o que o Flutter põe na borda de
+    // cima, e a pergunta é se o WebKit consegue amostrá-lo.
+    var paint = document.getElementById('paint');
+    function drawCanvas() {
+      var ratio = window.devicePixelRatio || 1;
+      paint.width = window.innerWidth * ratio;
+      paint.height = 120 * ratio;
+      var g = paint.getContext('2d');
+      g.fillStyle = '#fafafa';
+      g.fillRect(0, 0, paint.width, paint.height);
+    }
+    drawCanvas();
+    window.addEventListener('resize', drawCanvas);
+
+    function inset(side) {
+      var probe = document.createElement('div');
+      probe.style.cssText =
+        'position:fixed;visibility:hidden;height:env(safe-area-inset-' + side + ',0px)';
+      document.body.appendChild(probe);
+      var value = probe.getBoundingClientRect().height;
+      probe.remove();
+      return Math.round(value * 10) / 10;
+    }
+
+    function report() {
+      var vp = document.getElementById('vp').getAttribute('content');
+      var standalone =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        window.navigator.standalone === true;
+      document.getElementById('out').textContent = [
+        'standalone: ' + standalone,
+        'viewport-fit: ' + (vp.indexOf('cover') >= 0 ? 'cover' : 'auto'),
+        'safe-area top/bottom: ' + inset('top') + ' / ' + inset('bottom'),
+        'innerHeight: ' + window.innerHeight,
+        'screen: ' + screen.width + '×' + screen.height,
+        'dpr: ' + (window.devicePixelRatio || 1),
+        'UA: ' + navigator.userAgent.slice(0, 96),
+      ].join('\n');
+
+      label('b-vp', 'viewport-fit', vp.indexOf('cover') >= 0 ? 'cover' : 'auto');
+      label('b-head', 'cabeçalho DOM opaco', body.classList.contains('head-on'));
+      label('b-cap', 'faixa DOM na safe area', body.classList.contains('cap-on'));
+      label('b-canvas', 'canvas pintado no topo', body.classList.contains('canvas-on'));
+      label('b-scroll', 'página rola', body.classList.contains('scrolls'));
+    }
+
+    function label(id, name, value) {
+      var on = value === true ? 'sim' : value === false ? 'não' : value;
+      document.getElementById(id).innerHTML =
+        '<b>' + name + ':</b> ' + on + ' — tocar para trocar';
+    }
+
+    function toggle(id, klass) {
+      document.getElementById(id).addEventListener('click', function () {
+        body.classList.toggle(klass);
+        if (klass === 'scrolls') body.classList.toggle('fixed');
+        report();
+      });
+    }
+
+    document.getElementById('b-vp').addEventListener('click', function () {
+      var meta = document.getElementById('vp');
+      var cover = meta.getAttribute('content').indexOf('cover') >= 0;
+      meta.setAttribute(
+        'content',
+        'width=device-width, initial-scale=1.0, viewport-fit=' +
+          (cover ? 'auto' : 'cover')
+      );
+      setTimeout(report, 120);
+    });
+    toggle('b-head', 'head-on');
+    toggle('b-cap', 'cap-on');
+    toggle('b-canvas', 'canvas-on');
+    toggle('b-scroll', 'scrolls');
+
+    window.addEventListener('resize', report);
+    report();
+  </script>
+</body>
+</html>
